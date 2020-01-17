@@ -158,8 +158,8 @@ func (t *Table2Struct) Run() error {
 	}
 
 	// 组装struct
-	var structContent string
 	for tableRealName, item := range tableColumns {
+		var structContent string
 		// 去除前缀
 		if t.prefix != "" {
 			tableRealName = tableRealName[len(t.prefix):]
@@ -194,38 +194,52 @@ func (t *Table2Struct) Run() error {
 
 		// 添加 method 获取真实表名
 		if t.realNameMethod != "" {
-			structContent += fmt.Sprintf("func (%s) %s() string {\n",
+			structContent += fmt.Sprintf("func (*%s) %s() string {\n",
 				structName, t.realNameMethod)
 			structContent += fmt.Sprintf("%sreturn \"%s\"\n",
 				tab(depth), tableRealName)
 			structContent += "}\n\n"
 		}
-	}
 
-	// 如果有引入 time.Time, 则需要引入 time 包
-	var importContent string
-	if strings.Contains(structContent, "time.Time") {
-		importContent = "import \"time\"\n\n"
-	}
+		var NewFuncStr string
+		NewFuncStr = fmt.Sprintf("func New%s() *%s {\n",structName,structName)
+		NewFuncStr += fmt.Sprintf("%sreturn &%s{}\n}",
+			tab(depth), structName)
 
-	// 写入文件struct
-	var savePath = t.savePath
-	// 是否指定保存路径
-	if savePath == "" {
-		savePath = "model.go"
-	}
-	filePath := fmt.Sprintf("%s", savePath)
-	f, err := os.Create(filePath)
-	if err != nil {
-		log.Println("Can not write file")
-		return err
-	}
-	defer f.Close()
+		// 如果有引入 time.Time, 则需要引入 time 包
+		var importContent string
+		if strings.Contains(structContent, "time.Time") {
+			importContent = "import \"time\"\n\n"
+		}
 
-	f.WriteString(packageName + importContent + structContent)
+		// 写入文件struct
+		var savePath = t.savePath
+		// 是否指定保存路径
+		if savePath == "" {
+			savePath = "models/"+strings.ToLower(tableName)+".go"
+			fmt.Println(savePath)
+		}
+		_, err := os.Stat("models/")
+		if os.IsNotExist(err) {
+			os.Mkdir("models/", os.ModePerm)
+		}else if err != nil && !os.IsNotExist(err){
+			log.Printf("models err: %v\n", err)
+			return err
+		}
 
-	cmd := exec.Command("gofmt", "-w", filePath)
-	cmd.Run()
+		filePath := savePath
+		f, err := os.Create(filePath)
+		if err != nil {
+			log.Printf("Can not write file: %v\n", err)
+			return err
+		}
+		defer f.Close()
+
+		f.WriteString(packageName + importContent + structContent+NewFuncStr)
+
+		cmd := exec.Command("gofmt", "-w", filePath)
+		cmd.Run()
+	}
 
 	log.Println("gen model finish!!!")
 
@@ -360,4 +374,20 @@ func (t *Table2Struct) camelCase(str string) string {
 }
 func tab(depth int) string {
 	return strings.Repeat("\t", depth)
+}
+
+func strFirstToUpper(str string) string {
+	if len(str) < 1 {
+		return ""
+	}
+	strArr := []rune(str)
+	if strArr[0] >= 97 && strArr[0] <= 122  {
+		strArr[0] -=  32
+	}
+	for i, str := range strArr{
+		if str == '_' && strArr[i+1] >= 97 && strArr[i+1] <= 122 {
+			strArr[i+1] -=  32
+		}
+	}
+	return strings.ReplaceAll(string(strArr), "_", "")
 }
